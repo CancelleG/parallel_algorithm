@@ -4,6 +4,22 @@ import random
 import operator
 import pandas as pd
 import matplotlib.pyplot as plt
+import threading
+import time
+exitFlag = 0
+
+
+
+
+def read_tsp():
+    with open("./tspfiles/berlin52.tsp") as f:
+        line_count = f.readlines()
+        store_line = []
+        for count in range(len(line_count)-6):
+            store_line.append([float(string) for string in line_count[count+6].split()])
+            count += 1
+        print("read finish")
+    return store_line
 
 
 class City:         #创建一个城市类型，
@@ -152,26 +168,23 @@ def nextGeneration(currentGen, eliteSize, mutationRate):
     return nextGeneration
 
 
-def geneticAlgorithm(population, popSize, eliteSize, mutationRate, generations):
+def geneticAlgorithm(threadName, population, popSize, eliteSize, mutationRate, generations):
+    global exitFlag
     pop = initialPopulation(popSize, population)
     print("Initial distance: " + str(1 / rankRoutes(pop)[0][1]))
 
-    progress = []                               #这三句用来画图
+    progress = []                               #这两句用来画图
     progress.append(1 / rankRoutes(pop)[0][1])
-    # for i in range(0, generations):
-    #     pop = nextGeneration(pop, eliteSize, mutationRate)
-    #
-    #     if (1 / rankRoutes(pop)[0][1]) < min(progress):
-    #         print("Gen:%d,   distance:%s" % (i, str(1 / rankRoutes(pop)[0][1])))
-    #
-    #     progress.append(1 / rankRoutes(pop)[0][1])
-
-
     i = 0
     while(1):
+        try:
+            if exitFlag == 1:
+                raise ValueError("invalid thread id")
+        except(ValueError):
+            break
         pop = nextGeneration(pop, eliteSize, mutationRate)
         if (1 / rankRoutes(pop)[0][1]) < min(progress):
-            print("Gen:%d,   distance:%s" % (i, str(1 / rankRoutes(pop)[0][1])))
+            print("Name:%s, Gen:%d,   distance:%s" % (threadName, i , str(1 / rankRoutes(pop)[0][1])))
         progress.append(1 / rankRoutes(pop)[0][1])
         if int(1 / rankRoutes(pop)[0][1]) < 12915:      #通过brute_forces_tsp运行得出结果，11：4038
             break
@@ -179,36 +192,52 @@ def geneticAlgorithm(population, popSize, eliteSize, mutationRate, generations):
     print("Final distance: " + str(1 / rankRoutes(pop)[0][1]))
     bestRouteIndex = rankRoutes(pop)[0][0]
     bestRoute = pop[bestRouteIndex]
-
-
+    exitFlag = 1
     return progress, bestRoute
-
-
-def read_tsp():
-    with open("./tspfiles/berlin52.tsp") as f:
-        line_count = f.readlines()
-        store_line = []
-        for count in range(len(line_count)-6):
-            store_line.append([float(string) for string in line_count[count+6].split()])
-            count += 1
-        print("read finish")
-    return store_line
 
 
 def main():
     cityList = []
-
     data = read_tsp()
     data_len  = len(data)
     for i in range(data_len):
         cityList.append(City(x=data[i][1], y=data[i][2]))
 
-    progress,bestRoute = geneticAlgorithm(population=cityList, popSize=data_len, eliteSize=5, mutationRate=0.01, generations=500)  ###看是否缩进
+
+    class myThread(threading.Thread):
+        def __init__(self, threadID, name):
+            threading.Thread.__init__(self)
+            self.threadID = threadID
+            self.name = name
+
+        def run(self):
+            print("开始线程：" + self.name)
+            progress, bestRoute = geneticAlgorithm(self.name, population=cityList, popSize=data_len, eliteSize=5,
+                                                   mutationRate=0.01, generations=500)  ###看是否缩进
+            print("退出线程：" + self.name)
+    # 创建新线程
+    thread1 = myThread(1, "Thread-1")
+    thread2 = myThread(2, "Thread-2")
+    thread3 = myThread(3, "Thread-3")
+    thread4 = myThread(4, "Thread-4")
+    # 开启新线程
+    thread1.start()
+    thread2.start()
+    thread3.start()
+    thread4.start()
+    thread1.join()
+    thread2.join()
+    thread3.join()
+    thread4.join()
+    print("退出主线程")
+
+
     print("This took", time.clock() - start_time, "seconds to calculate.")
-    plt.plot(progress)
-    plt.ylabel('Distance')
-    plt.xlabel('Generation')
-    plt.show()
+    # plt.plot(progress)
+    # plt.ylabel('Distance')
+    # plt.xlabel('Generation')
+
+    # plt.show()
 
 
 if __name__ == '__main__':
