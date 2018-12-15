@@ -4,6 +4,22 @@ import random
 import operator
 import pandas as pd
 import matplotlib.pyplot as plt
+import threading
+import time
+exitFlag = 0
+
+elite_all = []
+progress = []
+
+def read_tsp():
+    with open("./tspfiles/berlin52.tsp") as f:
+        line_count = f.readlines()
+        store_line = []
+        for count in range(len(line_count)-6):
+            store_line.append([float(string) for string in line_count[count+6].split()])
+            count += 1
+        print("read finish")
+    return store_line
 
 
 class City:         #创建一个城市类型，
@@ -85,6 +101,13 @@ def matingPool(population, selectionResults):           #将由selection选择�
     for i in range(0, len(selectionResults)):
         index = selectionResults[i]
         matingpool.append(population[index])
+
+        if i ==0:               #选择全局精英
+            elite_all.append(population[index])
+            if len(elite_all)==11 :
+                elite_all.pop(0)
+
+    matingpool[-len(elite_all):] = elite_all      #将全局精英加入到各个线程的后面len(elite_all)个弱者中
     return matingpool
 
 
@@ -122,9 +145,11 @@ def breedPopulation(matingpool, eliteSize):         #交叉产生下一代
     return children
 
 
-def mutate(individual, mutationRate):       #变异，采用交换基因策略；每个基因都需要进行一定概率变异
+def mutate(individual, mutationRate, Tabu_table):       #变异，采用交换基因策略；每个基因都需要进行一定概率变异
+                                            #输入为个体的基因、变异率，计算每个基因的变异率，并且随机与其他基因交换
     for swapped in range(len(individual)):
         if (random.random() < mutationRate):
+            TabuSearch(individual, swapped, Tabu_table)
             swapWith = int(random.random() * len(individual))
 
             city1 = individual[swapped]
@@ -135,79 +160,155 @@ def mutate(individual, mutationRate):       #变异，采用交换基因策略�
     return individual
 
 
-def mutatePopulation(population, mutationRate):
+
+
+def TabuSearch(individual, swapped, Tabu_table):       #swapped为要交换的位置
+    candidate_num = 10              #设置候选集的大小
+    tabu_length = 10
+    generate_candidate = list(range(len(individual)))
+
+    individual_score = 1/Fitness(individual).routeFitness()
+    if individual_score <= Tabu_table["best"]:
+        Tabu_table["best"] = individual_score
+
+    generate_candidate.pop(swapped)
+    candidate_swap = random.sample(generate_candidate, candidate_num)
+
+    score_list = []
+    for gene in candidate_swap:
+        candidate = [gene for gene in individual]
+        city1 = candidate[swapped]
+        city2 = candidate[gene]
+        if [city1, city2] in Tabu_table["table"]:               #need to tackle
+
+
+
+            continue
+        candidate[swapped] = city2
+        candidate[gene] = city1
+        candidate_score = 1 / Fitness(candidate).routeFitness()
+        score_list.append(candidate_score)
+
+    best_index = 0
+    for gene in range(len(score_list)):
+        if score_list[gene] <= score_list[0]:
+            best_index = gene
+    if score_list[best_index] <= Tabu_table["best"]:
+        Tabu_table["best"] = score_list[best_index]
+        if len(Tabu_table["table"]) == tabu_length:
+            Tabu_table["table"].pop(0)
+            Tabu_table["table"].append([individual[swapped], individual[candidate_swap[best_index]]])
+        else:
+            Tabu_table["table"].append([individual[swapped], individual[candidate_swap[best_index]]])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def mutatePopulation(population, mutationRate, Tabu_table):
     mutatedPop = []
 
     for ind in range(0, len(population)):
-        mutatedInd = mutate(population[ind], mutationRate)
+        mutatedInd = mutate(population[ind], mutationRate, Tabu_table)
         mutatedPop.append(mutatedInd)
     return mutatedPop
 
-def nextGeneration(currentGen, eliteSize, mutationRate):
+def nextGeneration(currentGen, eliteSize, mutationRate, Tabu_table):
     popRanked = rankRoutes(currentGen)
     selectionResults = selection(popRanked, eliteSize)
     matingpool = matingPool(currentGen, selectionResults)
     children = breedPopulation(matingpool, eliteSize)
-    nextGeneration = mutatePopulation(children, mutationRate)
+    nextGeneration = mutatePopulation(children, mutationRate,Tabu_table)
     return nextGeneration
 
 
-def geneticAlgorithm(population, popSize, eliteSize, mutationRate, generations):
+def geneticAlgorithm(threadName, population, popSize, eliteSize, mutationRate, generations):
+    global exitFlag, progress
+    Tabu_table = {}
+    Tabu_table["table"] = []
+    Tabu_table["best"] = float('inf')
     pop = initialPopulation(popSize, population)
     print("Initial distance: " + str(1 / rankRoutes(pop)[0][1]))
 
-    progress = []                               #这三句用来画图
-    progress.append(1 / rankRoutes(pop)[0][1])
-    # for i in range(0, generations):
-    #     pop = nextGeneration(pop, eliteSize, mutationRate)
-    #
-    #     if (1 / rankRoutes(pop)[0][1]) < min(progress):
-    #         print("Gen:%d,   distance:%s" % (i, str(1 / rankRoutes(pop)[0][1])))
-    #
-    #     progress.append(1 / rankRoutes(pop)[0][1])
-
-
+    progress_sub = []                               #这两句用来画图
+    progress_sub.append(1 / rankRoutes(pop)[0][1])
     i = 0
     while(1):
-        pop = nextGeneration(pop, eliteSize, mutationRate)
-        if (1 / rankRoutes(pop)[0][1]) < min(progress):
-            print("Gen:%d,   distance:%s" % (i, str(1 / rankRoutes(pop)[0][1])))
-        progress.append(1 / rankRoutes(pop)[0][1])
+        try:
+            if exitFlag == 1:
+                raise ValueError("invalid thread id")
+        except(ValueError):
+            break
+        pop = nextGeneration(pop, eliteSize, mutationRate, Tabu_table)
+        if (1 / rankRoutes(pop)[0][1]) < min(progress_sub):
+            print("Name:%s, Gen:%d,   distance:%s" % (threadName, i , str(1 / rankRoutes(pop)[0][1])))
+        progress_sub.append(1 / rankRoutes(pop)[0][1])
         if int(1 / rankRoutes(pop)[0][1]) == 7544:      #通过brute_forces_tsp运行得出结果，11：4038
+                                                        #数据
+                                                        #输入
+
             break
         i += 1
     print("Final distance: " + str(1 / rankRoutes(pop)[0][1]))
     bestRouteIndex = rankRoutes(pop)[0][0]
     bestRoute = pop[bestRouteIndex]
+    exitFlag = 1
 
-
-    return progress, bestRoute
-
-
-def read_tsp():
-    with open("./tspfiles/berlin52.tsp") as f:
-        line_count = f.readlines()
-        store_line = []
-        for count in range(len(line_count)-6):
-            store_line.append([float(string) for string in line_count[count+6].split()])
-            count += 1
-        print("read finish")
-    return store_line
+    progress = progress_sub
+    return bestRoute
 
 
 def main():
     cityList = []
-
     data = read_tsp()
     data_len  = len(data)
     for i in range(data_len):
         cityList.append(City(x=data[i][1], y=data[i][2]))
 
-    progress,bestRoute = geneticAlgorithm(population=cityList, popSize=data_len, eliteSize=5, mutationRate=0.01, generations=500)  ###看是否缩进
+
+    class myThread(threading.Thread):
+        def __init__(self, threadID, name):
+            threading.Thread.__init__(self)
+            self.threadID = threadID
+            self.name = name
+
+        def run(self):
+            print("开始线程：" + self.name)
+            geneticAlgorithm(self.name, population=cityList, popSize=data_len, eliteSize=5,
+                                                   mutationRate=0.01, generations=500)  ###看是否缩进
+            print("退出线程：" + self.name)
+    # 创建新线程
+    thread1 = myThread(1, "Thread-1")
+    thread2 = myThread(2, "Thread-2")
+    thread3 = myThread(3, "Thread-3")
+    thread4 = myThread(4, "Thread-4")
+    # 开启新线程
+    thread1.start()
+    thread2.start()
+    thread3.start()
+    thread4.start()
+    thread1.join()
+    thread2.join()
+    thread3.join()
+    thread4.join()
+    print("退出主线程")
+
     print("This took", time.clock() - start_time, "seconds to calculate.")
     plt.plot(progress)
     plt.ylabel('Distance')
     plt.xlabel('Generation')
+    #
     plt.show()
 
 
