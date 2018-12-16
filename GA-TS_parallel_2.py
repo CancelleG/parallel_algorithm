@@ -148,18 +148,49 @@ def breedPopulation(matingpool, eliteSize):         #交叉产生下一代
 def mutate(individual, mutationRate, Tabu_table):       #变异，采用交换基因策略；每个基因都需要进行一定概率变异
                                             #输入为个体的基因、变异率，计算每个基因的变异率，并且随机与其他基因交换
 
-    for swapped in range(len(individual)):
-        if (random.random() < 1*mutationRate):
-            individual = TabuSearch(individual, swapped, Tabu_table)
-        # if(random.random() < mutationRate):
-        #     swapWith = int(random.random() * len(individual))
-        #
-        #     city1 = individual[swapped]
-        #     city2 = individual[swapWith]
-        #
-        #     individual[swapped] = city2
-        #     individual[swapWith] = city1
+    class myThread(threading.Thread):
+        def __init__(self, threadID, part_no, part, individual):
+            threading.Thread.__init__(self)
+            self.threadID = threadID
+            self.part_no = part_no
+            self.part = part
+            self.individual = individual
+
+        def run(self):
+            individual_tackle = SWAP(self.individual, self.part_no, self.part)
+            threadLock.acquire()
+            individual = individual_tackle
+            threadLock.release()
+
+    def SWAP(individual, part_no, part):
+        begin = int(len(individual) * ((part_no - 1) / part))
+        end = int(len(individual) * (part_no) / part)
+        for swapped in range(begin, end):
+            if (random.random() < 5 * mutationRate):
+                individual = TabuSearch(individual, swapped, Tabu_table)
+            if (random.random() < mutationRate):
+                swapWith = int(random.random() * len(individual))
+
+                city1 = individual[swapped]
+                city2 = individual[swapWith]
+
+                individual[swapped] = city2
+                individual[swapWith] = city1
+        return individual
+    # 创建新线程
+    threadLock = threading.Lock()
+    threads = []
+    thread1 = myThread(1, 1, 2, individual)
+    thread2 = myThread(2, 2, 2, individual)
+    # 开启新线程
+    thread1.start()
+    thread2.start()
+    threads.append(thread1)
+    threads.append(thread2)
+    thread1.join()
+    thread2.join()
     return individual
+
 
 def TabuSearch(individual, swapped, Tabu_table):       #swapped为要交换的位置
     candidate_num = 5              #设置候选集的大小

@@ -5,7 +5,9 @@ import operator
 import pandas as pd
 import matplotlib.pyplot as plt
 import threading
+import multiprocessing
 import time
+
 exitFlag = 0
 
 elite_all = []
@@ -254,6 +256,7 @@ def geneticAlgorithm(threadName, population, popSize, eliteSize, mutationRate, g
     while(1):
         try:
             if exitFlag == 1:
+
                 raise ValueError("invalid thread id")
         except(ValueError):
             break
@@ -261,7 +264,7 @@ def geneticAlgorithm(threadName, population, popSize, eliteSize, mutationRate, g
         if (1 / rankRoutes(pop)[0][1]) < min(progress_sub):
             print("Name:%s, Gen:%d,   distance:%s" % (threadName, i , str(1 / rankRoutes(pop)[0][1])))
         progress_sub.append(1 / rankRoutes(pop)[0][1])
-        if int(1 / rankRoutes(pop)[0][1]) == 2826:      #通过brute_forces_tsp运行得出结果，11：4038;  52:7544
+        if int(1 / rankRoutes(pop)[0][1]) < 10000:      #通过brute_forces_tsp运行得出结果，11：4038;  52:7544
                                                         #数据
                                                         #输入
 
@@ -284,32 +287,43 @@ def main():
         cityList.append(City(x=data[i][1], y=data[i][2]))
 
 
-    class myThread(threading.Thread):
-        def __init__(self, threadID, name):
-            threading.Thread.__init__(self)
-            self.threadID = threadID
-            self.name = name
+    # class myThread(threading.Thread):
+    #     def __init__(self, threadID, name):
+    #         threading.Thread.__init__(self)
+    #         self.threadID = threadID
+    #         self.name = name
+    #
+    #     def run(self):
+    #         print("开始线程：" + self.name)
+    #         geneticAlgorithm(self.name, population=cityList, popSize=data_len, eliteSize=5,
+    #                                                mutationRate=0.01, generations=500)  ###看是否缩进
+    #         print("退出线程：" + self.name)
+    # # 创建新线程
+    # thread1 = myThread(1, "Thread-1")
+    # thread2 = myThread(2, "Thread-2")
+    # thread3 = myThread(3, "Thread-3")
+    # thread4 = myThread(4, "Thread-4")
+    # # 开启新线程
+    # thread1.start()
+    # thread2.start()
+    # thread3.start()
+    # thread4.start()
+    # thread1.join()
+    # thread2.join()
+    # thread3.join()
+    # thread4.join()
+    # print("退出主线程")
 
-        def run(self):
-            print("开始线程：" + self.name)
-            geneticAlgorithm(self.name, population=cityList, popSize=data_len, eliteSize=5,
-                                                   mutationRate=0.01, generations=500)  ###看是否缩进
-            print("退出线程：" + self.name)
-    # 创建新线程
-    thread1 = myThread(1, "Thread-1")
-    thread2 = myThread(2, "Thread-2")
-    thread3 = myThread(3, "Thread-3")
-    thread4 = myThread(4, "Thread-4")
-    # 开启新线程
-    thread1.start()
-    thread2.start()
-    thread3.start()
-    thread4.start()
-    thread1.join()
-    thread2.join()
-    thread3.join()
-    thread4.join()
-    print("退出主线程")
+
+    pool = multiprocessing.Pool(processes=4)
+
+    pool.apply_async(geneticAlgorithm, ('process1', cityList, data_len, 5, 0.01, 500,))
+    pool.apply_async(geneticAlgorithm, ('process2', cityList, data_len, 5, 0.01, 500,))
+    pool.apply_async(geneticAlgorithm, ('process3', cityList, data_len, 5, 0.01, 500,))
+    pool.apply_async(geneticAlgorithm, ('process4', cityList, data_len, 5, 0.01, 500,))
+    pool.close()
+    pool.join()
+    print("Sub-process(es) done.")
 
     print("This took", time.clock() - start_time, "seconds to calculate.")
     plt.plot(progress)

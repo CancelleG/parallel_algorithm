@@ -5,6 +5,7 @@ import operator
 import pandas as pd
 import matplotlib.pyplot as plt
 import threading
+import multiprocessing
 import time
 exitFlag = 0
 
@@ -148,22 +149,38 @@ def breedPopulation(matingpool, eliteSize):         #交叉产生下一代
 def mutate(individual, mutationRate, Tabu_table):       #变异，采用交换基因策略；每个基因都需要进行一定概率变异
                                             #输入为个体的基因、变异率，计算每个基因的变异率，并且随机与其他基因交换
 
-    for swapped in range(len(individual)):
-        if (random.random() < 1*mutationRate):
-            individual = TabuSearch(individual, swapped, Tabu_table)
-        # if(random.random() < mutationRate):
-        #     swapWith = int(random.random() * len(individual))
-        #
-        #     city1 = individual[swapped]
-        #     city2 = individual[swapWith]
-        #
-        #     individual[swapped] = city2
-        #     individual[swapWith] = city1
+    def SWAP(individual_raw, part_no, part, lock):
+        individual = [num for num in individual_raw]
+        print("running")
+        begin = int(len(individual) * ((part_no - 1) / part))
+        end = int(len(individual) * (part_no) / part)
+        for swapped in range(begin, end):
+            if (random.random() < 5 * mutationRate):
+                individual = TabuSearch(individual, swapped, Tabu_table)
+            if (random.random() < mutationRate):
+                swapWith = int(random.random() * len(individual))
+
+                city1 = individual[swapped]
+                city2 = individual[swapWith]
+
+                individual[swapped] = city2
+                individual[swapWith] = city1
+        with lock:
+            individual_raw = individual
+
+    # num = multiprocessing.Array("i", [gene for gene in individual])
+    pool = multiprocessing.Pool(processes=4)
+    lock = multiprocessing.Lock()
+    pool.apply_async(SWAP, (individual, 1, 2, lock,))
+    pool.apply_async(SWAP, (individual, 2, 2, lock,))
+    pool.close()
+    pool.join()
     return individual
 
+
 def TabuSearch(individual, swapped, Tabu_table):       #swapped为要交换的位置
-    candidate_num = 5              #设置候选集的大小
-    tabu_length = 4
+    candidate_num = 20              #设置候选集的大小
+    tabu_length = 19
     generate_candidate = list(range(len(individual)))       #用于生成随机的交换基因，采用数组的形式用于定位
 
     individual_score = 1/Fitness(individual).routeFitness()
@@ -261,7 +278,7 @@ def geneticAlgorithm(threadName, population, popSize, eliteSize, mutationRate, g
         if (1 / rankRoutes(pop)[0][1]) < min(progress_sub):
             print("Name:%s, Gen:%d,   distance:%s" % (threadName, i , str(1 / rankRoutes(pop)[0][1])))
         progress_sub.append(1 / rankRoutes(pop)[0][1])
-        if int(1 / rankRoutes(pop)[0][1]) == 2826:      #通过brute_forces_tsp运行得出结果，11：4038;  52:7544
+        if int(1 / rankRoutes(pop)[0][1]) == 7544:      #通过brute_forces_tsp运行得出结果，11：4038;  52:7544
                                                         #数据
                                                         #输入
 

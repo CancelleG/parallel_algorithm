@@ -10,11 +10,11 @@ import calcs                            #class & function definitions
 import time                             #clock
 from itertools import permutations      #find route permutations
 import numpy as np
-
+from scipy.misc import factorial
 
 
 #input data
-file_name = "./tspfiles/berlin52.tsp"       #添加TSP路径
+file_name = "./tspfiles/berlin52_raw.tsp"       #添加TSP路径
 
 #begin clock
 start_time = time.clock()
@@ -33,10 +33,10 @@ list_elems = list(range(1, len(point_objects) + 1))
 distance_list = list()
 min_dist = [0, 999999999999]
 
+
+record_acomplish = 0
 #for each permutation of points...
-for elem in permutations(list_elems):
-
-
+for elem in permutations(list_elems):          #逐渐递减，elem=(1,2,....,20)，type=tuple下一次为(1,2,3,......,19)
     #initialize distance
     distance = 0
     #find the first point & set it as the current point
@@ -54,11 +54,18 @@ for elem in permutations(list_elems):
     distance += calcs.calcDistance(curr_point, first_point)
     #add total distance to the list
     if distance < min_dist[1]:
-        min_dist = [elem, distance]
+        min_dist = [elem, distance]         #记录最短的排列和距离
+    record_acomplish += 1
+    if record_acomplish%100000 == 0:
+        print("Accomplish：%.2f%s;  current: %d, total: %d, excess time:%.2f h" % (
+        record_acomplish / factorial(list_size) * 100,
+        '%', record_acomplish, factorial(list_size),
+        (time.clock() - start_time) / record_acomplish * factorial(list_size) / 60 / 60))
 
 #create a list of x,y coordinates of each point in the minimum path, including the start/finish point
 x_coords = list()
 y_coords = list()
+print('asdasdasd', min_dist)
 for item in min_dist[0]:
     x_coords.append(calcs.findPoint2(point_objects, item).x)
     y_coords.append(calcs.findPoint2(point_objects, item).y)
