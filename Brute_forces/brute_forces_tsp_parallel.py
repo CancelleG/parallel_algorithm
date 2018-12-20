@@ -6,14 +6,11 @@ Fall 2014
 """
 
 import matplotlib.pyplot as plt         #visualization
-import calcs                            #class & function definitions
+from Brute_forces import calcs
 import time                             #clock
 from itertools import permutations      #find route permutations
 import multiprocessing
 from scipy.misc import factorial
-import threading
-
-import numpy as np
 
 
 def parallel_cal(permu_list,point_objects,list_size):
@@ -59,8 +56,6 @@ if __name__ == '__main__':
 
     #initalize list of distances for each route
     distance_list = list()
-
-    record_acomplish = 0
     record_index = 0    #为parallel_0、1、2、3计数
     max_record = 50000     #parallel_0、1、2、3存放的最大容量
 
@@ -74,18 +69,26 @@ if __name__ == '__main__':
     pool = multiprocessing.Pool(processes=4)
     # lock = multiprocessing.Lock()
     #for each permutation of points...
+    count = 0       #计数总循环次数
+    max_num = factorial(list_size)
     for elem in permutations(list_elems):          #逐渐递减，elem=(1,2,....,20)，type=tuple下一次为(1,2,3,......,19)
-        if record_index < max_record:      parallel_0.append(elem); record_index += 1
-        elif record_index < 2*max_record:  parallel_1.append(elem); record_index += 1
-        elif record_index < 3*max_record:  parallel_2.append(elem); record_index += 1
-        elif record_index < 4*max_record:  parallel_3.append(elem); record_index += 1
+        count += 1
+        if record_index < max_record and count != max_num:
+            parallel_0.append(elem)
+            record_index += 1
+        elif record_index < 2*max_record and count != max_num:
+            parallel_1.append(elem)
+            record_index += 1
+
+        elif record_index < 3*max_record and count != max_num:
+            parallel_2.append(elem)
+            record_index += 1
+
+        elif record_index < 4*max_record and count != max_num:
+            parallel_3.append(elem)
+            record_index += 1
         else:
-
-
-            # best_record.append(pool.apply_async(parallel_cal, (parallel_0,point_objects,list_size)).get())
-            # best_record.append(pool.apply_async(parallel_cal, (parallel_1,point_objects,list_size)).get())
-            # best_record.append(pool.apply_async(parallel_cal, (parallel_2,point_objects,list_size)).get())
-            # best_record.append(pool.apply_async(parallel_cal, (parallel_3,point_objects,list_size)).get())
+            # parallel_0.append(elem)         #防止执行到这一步时，当前的elem丢失
             record0 =pool.apply_async(parallel_cal, (parallel_0,point_objects,list_size))
             record1 =pool.apply_async(parallel_cal, (parallel_1,point_objects,list_size))
             record2 =pool.apply_async(parallel_cal, (parallel_2,point_objects,list_size))
@@ -94,9 +97,6 @@ if __name__ == '__main__':
             best_record.append(record1.get())
             best_record.append(record2.get())
             best_record.append(record3.get())
-            if record_acomplish + record_index == factorial(list_size):
-                pool.close()
-                pool.join()
             for best in best_record:
                 if best[1] < min_dist[1]:
                     min_dist = best
@@ -106,19 +106,17 @@ if __name__ == '__main__':
             parallel_1 = []
             parallel_2 = []
             parallel_3 = []
-            record_acomplish += record_index
-            print("Accomplish：%.2f%s;  current: %d, total: %d, excess time:%.2f h" % (
-                record_acomplish / factorial(list_size) * 100,
-                '%', record_acomplish, factorial(list_size),
-                (time.clock() - start_time) / record_acomplish * factorial(list_size) / 60 / 60))
+            print("Progress：%.2f%s;  current: %d, total: %d,  remaining time:%.2f h" % (
+                count / factorial(list_size) * 100,
+                '%', count, factorial(list_size),
+                ((time.clock() - start_time + 0.01) / count * factorial(list_size)-((time.clock() - start_time))) / 60 / 60))
             record_index = 0
-    # pool.close()
-    # pool.join()
+    pool.close()
+    pool.join()
 
     #create a list of x,y coordinates of each point in the minimum path, including the start/finish point
     x_coords = list()
     y_coords = list()
-    print("asdasdasd", min_dist)
     for item in min_dist[0]:
         x_coords.append(calcs.findPoint2(point_objects, item).x)
         y_coords.append(calcs.findPoint2(point_objects, item).y)

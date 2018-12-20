@@ -1,15 +1,7 @@
-"""
-TSP Brute Force Calculator
-CECS 545
-Sarah Mullins
-Fall 2014
-"""
-
 import matplotlib.pyplot as plt         #visualization
-import calcs                            #class & function definitions
+from Brute_forces import calcs
 import time                             #clock
 from itertools import permutations      #find route permutations
-import numpy as np
 from scipy.misc import factorial
 
 

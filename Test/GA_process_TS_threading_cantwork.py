@@ -1,3 +1,6 @@
+#GA算法采用了multiprocessing.Pool()方法实现，可运行比较诡异，跑不出结果
+
+
 import numpy as np
 import time
 import random
@@ -5,14 +8,16 @@ import operator
 import pandas as pd
 import matplotlib.pyplot as plt
 import threading
+import multiprocessing
 import time
+
 exitFlag = 0
 
 elite_all = []
 progress = []
 
 def read_tsp():
-    with open("./tspfiles/berlin52.tsp") as f:
+    with open(r"D:\Users\HZ.Guo\PycharmProjects\parallel_algorithm\tspfiles\berlin52.tsp") as f:
         line_count = f.readlines()
         store_line = []
         for count in range(len(line_count)-6):
@@ -145,38 +150,106 @@ def breedPopulation(matingpool, eliteSize):         #交叉产生下一代
     return children
 
 
-def mutate(individual, mutationRate):       #变异，采用交换基因策略；每个基因都需要进行一定概率变异
+def mutate(individual, mutationRate, Tabu_table):       #变异，采用交换基因策略；每个基因都需要进行一定概率变异
+                                            #输入为个体的基因、变异率，计算每个基因的变异率，并且随机与其他基因交换
+
     for swapped in range(len(individual)):
-        if (random.random() < mutationRate):
-            swapWith = int(random.random() * len(individual))
-
-            city1 = individual[swapped]
-            city2 = individual[swapWith]
-
-            individual[swapped] = city2
-            individual[swapWith] = city1
+        if (random.random() < 1*mutationRate):
+            individual = TabuSearch(individual, swapped, Tabu_table)
+        # if(random.random() < mutationRate):
+        #     swapWith = int(random.random() * len(individual))
+        #
+        #     city1 = individual[swapped]
+        #     city2 = individual[swapWith]
+        #
+        #     individual[swapped] = city2
+        #     individual[swapWith] = city1
     return individual
 
+def TabuSearch(individual, swapped, Tabu_table):       #swapped为要交换的位置
+    candidate_num = 5              #设置候选集的大小
+    tabu_length = 4
+    generate_candidate = list(range(len(individual)))       #用于生成随机的交换基因，采用数组的形式用于定位
 
-def mutatePopulation(population, mutationRate):
+    individual_score = 1/Fitness(individual).routeFitness()
+    if individual_score <= Tabu_table["best"]:          #用于初始化”best“的值
+        Tabu_table["best"] = individual_score
+
+    generate_candidate.pop(swapped)                     #将swapped的基因的index排除
+    candidate_swap = random.sample(generate_candidate, candidate_num)
+
+    score_list = []     #存放得分
+    i = 0           #用于定位candidate_swap的值
+    candidate_tackel_store = []     #存放生成的candidate
+    for gene in candidate_swap:         #这里的gene为individual的index
+        candidate = [gene for gene in individual]
+        city1 = candidate[swapped]
+        city2 = candidate[gene]
+        candidate[swapped] = city2
+        candidate[gene] = city1
+        candidate_score = 1 / Fitness(candidate).routeFitness()
+        if [city1, city2] in Tabu_table["table"] and candidate_score>=Tabu_table["best"]:       #如果(city1-city2)对在禁忌表中，且不是最优，则选择下一个
+            candidate_swap.pop(i)
+            continue
+        elif [city2, city1] in Tabu_table["table"] and candidate_score>=Tabu_table["best"]:
+            candidate_swap.pop(i)
+            continue
+
+        #此时candidate_score<Tabu_table["best"]
+        a = 0
+        for gene in Tabu_table["table"]:        #如果(city1-city2)对在禁忌表中，且是最优，则将这一对从禁忌表中删除
+            if gene == [city1, city2] or gene == [city2, city1]:
+                Tabu_table["table"].pop(a)
+                return candidate
+            a += 1
+
+        i += 1
+        score_list.append(candidate_score)
+        candidate_tackel_store.append(candidate)
+
+    best_index = 0
+    for gene in range(len(score_list)):
+        if score_list[gene] <= score_list[0]:
+            best_index = gene
+    # if score_list[best_index] <= Tabu_table["best"]:            #判断score_list[best_index]的值是否是最优，若不是，则加入
+    #                                                             #禁忌表，并且将该个体返回
+
+
+    if len(score_list) == 0:
+        return individual
+    if score_list[best_index] < Tabu_table["best"]:
+        Tabu_table["best"] = score_list[best_index]
+
+
+    if len(Tabu_table["table"]) == tabu_length:
+        Tabu_table["table"].pop(0)
+        Tabu_table["table"].append([individual[swapped], individual[candidate_swap[best_index]]])
+    else:
+        Tabu_table["table"].append([individual[swapped], individual[candidate_swap[best_index]]])
+    return candidate_tackel_store[best_index]
+
+def mutatePopulation(population, mutationRate, Tabu_table):
     mutatedPop = []
 
     for ind in range(0, len(population)):
-        mutatedInd = mutate(population[ind], mutationRate)
+        mutatedInd = mutate(population[ind], mutationRate, Tabu_table)
         mutatedPop.append(mutatedInd)
     return mutatedPop
 
-def nextGeneration(currentGen, eliteSize, mutationRate):
+def nextGeneration(currentGen, eliteSize, mutationRate, Tabu_table):
     popRanked = rankRoutes(currentGen)
     selectionResults = selection(popRanked, eliteSize)
     matingpool = matingPool(currentGen, selectionResults)
     children = breedPopulation(matingpool, eliteSize)
-    nextGeneration = mutatePopulation(children, mutationRate)
+    nextGeneration = mutatePopulation(children, mutationRate,Tabu_table)
     return nextGeneration
 
 
 def geneticAlgorithm(threadName, population, popSize, eliteSize, mutationRate, generations):
     global exitFlag, progress
+    Tabu_table = {}
+    Tabu_table["table"] = []
+    Tabu_table["best"] = float('inf')
     pop = initialPopulation(popSize, population)
     print("Initial distance: " + str(1 / rankRoutes(pop)[0][1]))
 
@@ -186,14 +259,16 @@ def geneticAlgorithm(threadName, population, popSize, eliteSize, mutationRate, g
     while(1):
         try:
             if exitFlag == 1:
+
                 raise ValueError("invalid thread id")
+            multiprocessing.Process
         except(ValueError):
             break
-        pop = nextGeneration(pop, eliteSize, mutationRate)
+        pop = nextGeneration(pop, eliteSize, mutationRate, Tabu_table)
         if (1 / rankRoutes(pop)[0][1]) < min(progress_sub):
             print("Name:%s, Gen:%d,   distance:%s" % (threadName, i , str(1 / rankRoutes(pop)[0][1])))
         progress_sub.append(1 / rankRoutes(pop)[0][1])
-        if int(1 / rankRoutes(pop)[0][1]) == 7544:      #通过brute_forces_tsp运行得出结果，11：4038
+        if int(1 / rankRoutes(pop)[0][1]) < 10000:      #通过brute_forces_tsp运行得出结果，11：4038;  52:7544
                                                         #数据
                                                         #输入
 
@@ -216,32 +291,15 @@ def main():
         cityList.append(City(x=data[i][1], y=data[i][2]))
 
 
-    class myThread(threading.Thread):
-        def __init__(self, threadID, name):
-            threading.Thread.__init__(self)
-            self.threadID = threadID
-            self.name = name
+    pool = multiprocessing.Pool(processes=4)
 
-        def run(self):
-            print("开始线程：" + self.name)
-            geneticAlgorithm(self.name, population=cityList, popSize=data_len, eliteSize=5,
-                                                   mutationRate=0.01, generations=500)  ###看是否缩进
-            print("退出线程：" + self.name)
-    # 创建新线程
-    thread1 = myThread(1, "Thread-1")
-    thread2 = myThread(2, "Thread-2")
-    thread3 = myThread(3, "Thread-3")
-    thread4 = myThread(4, "Thread-4")
-    # 开启新线程
-    thread1.start()
-    thread2.start()
-    thread3.start()
-    thread4.start()
-    thread1.join()
-    thread2.join()
-    thread3.join()
-    thread4.join()
-    print("退出主线程")
+    pool.apply_async(geneticAlgorithm, ('process1', cityList, data_len, 5, 0.01, 500,))
+    pool.apply_async(geneticAlgorithm, ('process2', cityList, data_len, 5, 0.01, 500,))
+    pool.apply_async(geneticAlgorithm, ('process3', cityList, data_len, 5, 0.01, 500,))
+    pool.apply_async(geneticAlgorithm, ('process4', cityList, data_len, 5, 0.01, 500,))
+    pool.close()
+    pool.join()
+    print("Sub-process(es) done.")
 
     print("This took", time.clock() - start_time, "seconds to calculate.")
     plt.plot(progress)

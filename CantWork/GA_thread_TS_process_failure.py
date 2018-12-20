@@ -1,3 +1,8 @@
+#尝试遗传算法采用线程运行，禁忌算法采用multiprocess.Pool()进行
+#原因：
+#1. multiprocess.Pool()创建的进程无法加入进程锁（待测试）
+#2. 线程可以共享全局变量
+
 import numpy as np
 import time
 import random
@@ -5,6 +10,7 @@ import operator
 import pandas as pd
 import matplotlib.pyplot as plt
 import threading
+import multiprocessing
 import time
 exitFlag = 0
 
@@ -104,7 +110,7 @@ def matingPool(population, selectionResults):           #将由selection选择�
 
         if i ==0:               #选择全局精英
             elite_all.append(population[index])
-            if len(elite_all)==11 :
+            if len(elite_all) == 11:
                 elite_all.pop(0)
 
     matingpool[-len(elite_all):] = elite_all      #将全局精英加入到各个线程的后面len(elite_all)个弱者中
@@ -144,21 +150,48 @@ def breedPopulation(matingpool, eliteSize):         #交叉产生下一代
         children.append(child)
     return children
 
+def SWAP(individual, part_no, part, mutationRate, Tabu_table, change_list):
+
+    individual_compare = individual
+    change_position = []
+
+    begin = int(len(individual) * ((part_no - 1) / part))
+    end = int(len(individual) * (part_no) / part)
+    for swapped in range(begin, end):
+        if (random.random() < 50*mutationRate):
+            individual = TabuSearch(individual, swapped, Tabu_table)
+            for position in range(len(individual)):
+                if individual_compare[position].x != individual[position].x and individual_compare[position].y != individual[position].y:
+                    change_position.append(position)
+            if len(change_list)!=0:     #检查是否会发生没有change的情况
+                city1 = change_list[change_position[0]]
+                city2 = change_list[change_position[1]]
+                change_list[change_position[0]] = city2
+                change_list[change_position[1]] = city1
+            change_position=[]
+        if (random.random() < mutationRate):
+            swapWith = int(random.random() * len(individual))
+
+            city1 = change_list[swapped]
+            city2 = change_list[swapWith]
+
+            change_list[swapped] = city2
+            change_list[swapWith] = city1
 
 def mutate(individual, mutationRate, Tabu_table):       #变异，采用交换基因策略；每个基因都需要进行一定概率变异
                                             #输入为个体的基因、变异率，计算每个基因的变异率，并且随机与其他基因交换
+    individual_store = [gene for gene in individual]
+    change_list = list(range(len(individual)))
+    change_list_mpm = mpm.list(change_list)
+    pool.apply_async(SWAP, (individual, 1, 2, mutationRate, Tabu_table, change_list_mpm))
+    pool.apply_async(SWAP, (individual, 2, 2, mutationRate, Tabu_table, change_list_mpm))
 
-    for swapped in range(len(individual)):
-        if (random.random() < 1*mutationRate):
-            individual = TabuSearch(individual, swapped, Tabu_table)
-        # if(random.random() < mutationRate):
-        #     swapWith = int(random.random() * len(individual))
-        #
-        #     city1 = individual[swapped]
-        #     city2 = individual[swapWith]
-        #
-        #     individual[swapped] = city2
-        #     individual[swapWith] = city1
+    change_list = change_list_mpm
+    original_position = 0
+    for index in range(len(change_list)):
+        individual[index] = individual_store[change_list[index]]
+
+    # pool.apply(SWAP, (individual, 2, 2, mutationRate, Tabu_table))
     return individual
 
 def TabuSearch(individual, swapped, Tabu_table):       #swapped为要交换的位置
@@ -321,4 +354,8 @@ def main():
 
 if __name__ == '__main__':
     start_time = time.clock()
+    pool = multiprocessing.Pool(processes=8)
+    mpm = multiprocessing.Manager()
     main()
+    pool.close()
+    pool.join()

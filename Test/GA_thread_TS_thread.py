@@ -1,3 +1,10 @@
+#状态：未完成
+#从GATS_parallel_GA.py改进
+#改进：改进了GATS_parallel_GA的elite不能共享问题
+#错误：
+#1. elite可以共享后计算速度大大降低，甚至无法共享
+#2. 返回后的结果报错，出现了重复的城市
+
 import numpy as np
 import time
 import random
@@ -5,14 +12,14 @@ import operator
 import pandas as pd
 import matplotlib.pyplot as plt
 import threading
+import multiprocessing
 import time
-exitFlag = 0
 
 elite_all = []
-progress = []
+bestRoute_forplot = []
 
 def read_tsp():
-    with open("./tspfiles/berlin52.tsp") as f:
+    with open(r"D:\Users\HZ.Guo\PycharmProjects\parallel_algorithm\tspfiles\berlin52.tsp") as f:
         line_count = f.readlines()
         store_line = []
         for count in range(len(line_count)-6):
@@ -98,16 +105,22 @@ def selection(popRanked, eliteSize):
 
 def matingPool(population, selectionResults):           #将由selection选择出来的population编号进行提取population
     matingpool = []
+    lock_matingPool.acquire()
+    elite_all_temp = elite_all._getvalue()
+    lock_matingPool.release()
     for i in range(0, len(selectionResults)):
         index = selectionResults[i]
         matingpool.append(population[index])
-
-        if i ==0:               #选择全局精英
+        if i == 0:               #选择全局精英
+            lock_matingPool.acquire()
+            elite_all_temp.append(population[index])
             elite_all.append(population[index])
-            if len(elite_all)==11 :
+            while(len(elite_all._getvalue()) > 10) :         #交换精英
+                elite_all_temp.pop(0)
                 elite_all.pop(0)
-
-    matingpool[-len(elite_all):] = elite_all      #将全局精英加入到各个线程的后面len(elite_all)个弱者中
+            lock_matingPool.release()
+    if len(elite_all_temp) != 0:
+        matingpool[-len(elite_all_temp):] = elite_all_temp      #将全局精英加入到各个线程的后面len(elite_all)个弱者中
     return matingpool
 
 
@@ -166,9 +179,9 @@ def mutate(individual, mutationRate, Tabu_table):       #变异，采用交换�
         begin = int(len(individual) * ((part_no - 1) / part))
         end = int(len(individual) * (part_no) / part)
         for swapped in range(begin, end):
-            if (random.random() < 5 * mutationRate):
-                individual = TabuSearch(individual, swapped, Tabu_table)
             if (random.random() < mutationRate):
+                individual = TabuSearch(individual, swapped, Tabu_table)
+            if (random.random() <0.5* mutationRate): #GATS_no_parallel 用0.5效果不错
                 swapWith = int(random.random() * len(individual))
 
                 city1 = individual[swapped]
@@ -186,7 +199,6 @@ def mutate(individual, mutationRate, Tabu_table):       #变异，采用交换�
     thread1.start()
     thread2.start()
     threads.append(thread1)
-    threads.append(thread2)
     thread1.join()
     thread2.join()
     return individual
@@ -271,8 +283,10 @@ def nextGeneration(currentGen, eliteSize, mutationRate, Tabu_table):
     return nextGeneration
 
 
-def geneticAlgorithm(threadName, population, popSize, eliteSize, mutationRate, generations):
-    global exitFlag, progress
+def geneticAlgorithm(threadName, population, popSize, eliteSize, mutationRate, generations, exitProcessFlag, progress, bestRoute_forplot, elite_all_proc, lock):
+    global lock_matingPool, elite_all
+    elite_all = elite_all_proc
+    lock_matingPool = lock
     Tabu_table = {}
     Tabu_table["table"] = []
     Tabu_table["best"] = float('inf')
@@ -281,33 +295,32 @@ def geneticAlgorithm(threadName, population, popSize, eliteSize, mutationRate, g
 
     progress_sub = []                               #这两句用来画图
     progress_sub.append(1 / rankRoutes(pop)[0][1])
+
+    gener_count = 0
     i = 0
-    while(1):
-        try:
-            if exitFlag == 1:
-                raise ValueError("invalid thread id")
-        except(ValueError):
-            break
+    while(exitProcessFlag.value):
         pop = nextGeneration(pop, eliteSize, mutationRate, Tabu_table)
         if (1 / rankRoutes(pop)[0][1]) < min(progress_sub):
             print("Name:%s, Gen:%d,   distance:%s" % (threadName, i , str(1 / rankRoutes(pop)[0][1])))
         progress_sub.append(1 / rankRoutes(pop)[0][1])
-        if int(1 / rankRoutes(pop)[0][1]) == 2826:      #通过brute_forces_tsp运行得出结果，11：4038;  52:7544
-                                                        #数据
-                                                        #输入
-
+        if int(1 / rankRoutes(pop)[0][1]) == 7544 or gener_count == generations and exitProcessFlag:      #通过brute_forces_tsp运行得出结果，11：4038;  52:7544
+                                                        #数据#输入
+            exitProcessFlag.value = False
+            bestRouteIndex = rankRoutes(pop)[0][0]
+            bestRoute = pop[bestRouteIndex]
+            for i in population:
+                for gene_index in range(len(bestRoute)):
+                    if i.x == bestRoute[gene_index].x and i.y == bestRoute[gene_index].y:
+                        bestRoute_forplot.append(gene_index)
+            progress.append(progress_sub)
+            print("Final distance: " + str(min(progress_sub)))
             break
         i += 1
-    print("Final distance: " + str(1 / rankRoutes(pop)[0][1]))
-    bestRouteIndex = rankRoutes(pop)[0][0]
-    bestRoute = pop[bestRouteIndex]
-    exitFlag = 1
-
-    progress = progress_sub
-    return bestRoute
+        gener_count += 1
 
 
 def main():
+    # global bestRoute_forplot
     cityList = []
     data = read_tsp()
     data_len  = len(data)
@@ -315,41 +328,85 @@ def main():
         cityList.append(City(x=data[i][1], y=data[i][2]))
 
 
-    class myThread(threading.Thread):
-        def __init__(self, threadID, name):
-            threading.Thread.__init__(self)
-            self.threadID = threadID
-            self.name = name
+    exitProcessFlag = multiprocessing.Value('b', False)
+    A = []
+    progress = multiprocessing.Manager().list(A)
+    bestRoute_forplot = multiprocessing.Manager().list(A)
+    #设置迭代次数
+    generations = 5000
+    #设置变异率
+    mutationRate = 0.01
+    #设置种群大小
+    data_len = 2*len(data)
 
-        def run(self):
-            print("开始线程：" + self.name)
-            geneticAlgorithm(self.name, population=cityList, popSize=data_len, eliteSize=5,
-                                                   mutationRate=0.01, generations=500)  ###看是否缩进
-            print("退出线程：" + self.name)
-    # 创建新线程
-    thread1 = myThread(1, "Thread-1")
-    thread2 = myThread(2, "Thread-2")
-    thread3 = myThread(3, "Thread-3")
-    thread4 = myThread(4, "Thread-4")
-    # 开启新线程
-    thread1.start()
-    thread2.start()
-    thread3.start()
-    thread4.start()
-    thread1.join()
-    thread2.join()
-    thread3.join()
-    thread4.join()
-    print("退出主线程")
+    elite_all_proc = multiprocessing.Manager().list(A)
+    exitProcessFlag.value = True
+    lock = multiprocessing.Lock()
+    p1 = multiprocessing.Process(target=geneticAlgorithm,args=("process1", cityList, data_len, 5, mutationRate, generations,exitProcessFlag, progress, bestRoute_forplot, elite_all_proc,lock))
+    p2 = multiprocessing.Process(target=geneticAlgorithm,args=("process2", cityList, data_len, 5, mutationRate, generations,exitProcessFlag, progress, bestRoute_forplot, elite_all_proc,lock))
+    p3 = multiprocessing.Process(target=geneticAlgorithm,args=("process3", cityList, data_len, 5, mutationRate, generations,exitProcessFlag, progress, bestRoute_forplot, elite_all_proc,lock))
+    p4 = multiprocessing.Process(target=geneticAlgorithm,args=("process4", cityList, data_len, 5, mutationRate, generations,exitProcessFlag, progress, bestRoute_forplot, elite_all_proc,lock))
+    p1.start()
+    p2.start()
+    p3.start()
+    p4.start()
+    p1.join()
+    p2.join()
+    p3.join()
+    p4.join()
+
+    progress = progress._getvalue()[0]
+    bestRoute = bestRoute_forplot._getvalue()
+    print(len(bestRoute),len(cityList))
+    # bestRoute_forplot = cityList           #问题根源，没有采用copy的方式，才直接用了=
+    bestRoute_forplot = cityList.copy()
+
+    for gene_index in range(len(bestRoute)):
+        bestRoute_forplot[bestRoute[gene_index]] = cityList[gene_index]
+
+#通过一下函数争端出cityList被修改过
+#count = 0
+# for i in cityList:
+#     alarm = 0
+#     for j in cityList:
+#         if i.x==j.x and i.y == j.y:
+#             alarm += 1
+#             if alarm == 2:
+#                 print('Oh,no',j)
+#                 print(count)
+#                 count+=1
+
+
 
     print("This took", time.clock() - start_time, "seconds to calculate.")
+    #画出最优路径的路线图
+    bestRoute_forplot.append(bestRoute_forplot[0])
+    x_coords = []
+    y_coords = []
+    for individual in bestRoute_forplot:
+        x_coords.append(individual.x)
+        y_coords.append(individual.y)
+    plt.plot(x_coords[0], y_coords[0], 'ro-')
+    plt.plot(x_coords, y_coords, 'rx-')
+    for elem in range(0, len(bestRoute_forplot)):
+        elem_num = elem + 1
+        point_x = bestRoute_forplot[elem].x
+        point_y = bestRoute_forplot[elem].y
+        if elem<len(bestRoute_forplot)-1:
+            plt.annotate("%d" % elem_num, xy=(point_x, point_y))
+        else:
+            plt.annotate(" ", xy=(point_x, point_y))
+    plt.title("GATS_parallel_tackle_elite")
+    plt.show()
+    #画出距离随迭代次数的变化
     plt.plot(progress)
     plt.ylabel('Distance')
     plt.xlabel('Generation')
-    #
+    plt.title("GATS_parallel_tackle_elite")
     plt.show()
 
 
 if __name__ == '__main__':
     start_time = time.clock()
     main()
+

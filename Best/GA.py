@@ -1,3 +1,5 @@
+#实现了GA算法，最原始的可运行版本
+
 import numpy as np
 import time
 import random
@@ -153,6 +155,7 @@ def nextGeneration(currentGen, eliteSize, mutationRate):
 
 
 def geneticAlgorithm(population, popSize, eliteSize, mutationRate, generations):
+    global bestRoute_forplot
     pop = initialPopulation(popSize, population)
     print("Initial distance: " + str(1 / rankRoutes(pop)[0][1]))
 
@@ -166,26 +169,26 @@ def geneticAlgorithm(population, popSize, eliteSize, mutationRate, generations):
     #
     #     progress.append(1 / rankRoutes(pop)[0][1])
 
-
+    gener_count = 0
     i = 0
     while(1):
         pop = nextGeneration(pop, eliteSize, mutationRate)
         if (1 / rankRoutes(pop)[0][1]) < min(progress):
             print("Gen:%d,   distance:%s" % (i, str(1 / rankRoutes(pop)[0][1])))
         progress.append(1 / rankRoutes(pop)[0][1])
-        if int(1 / rankRoutes(pop)[0][1]) == 7544:      #通过brute_forces_tsp运行得出结果，11：4038
+        if int(1 / rankRoutes(pop)[0][1]) < 8000 or gener_count == generations:      #通过brute_forces_tsp运行得出结果，11：4038
+            bestRouteIndex = rankRoutes(pop)[0][0]
+            bestRoute = pop[bestRouteIndex]
+            bestRoute_forplot = bestRoute
+            print("Final distance: " + str(min(progress)))
             break
         i += 1
-    print("Final distance: " + str(1 / rankRoutes(pop)[0][1]))
-    bestRouteIndex = rankRoutes(pop)[0][0]
-    bestRoute = pop[bestRouteIndex]
-
-
+        gener_count += 1
     return progress, bestRoute
 
 
 def read_tsp():
-    with open("./tspfiles/berlin52.tsp") as f:
+    with open(r"D:\Users\HZ.Guo\PycharmProjects\parallel_algorithm\tspfiles\berlin52.tsp") as f:
         line_count = f.readlines()
         store_line = []
         for count in range(len(line_count)-6):
@@ -203,9 +206,32 @@ def main():
     for i in range(data_len):
         cityList.append(City(x=data[i][1], y=data[i][2]))
 
-    progress,bestRoute = geneticAlgorithm(population=cityList, popSize=data_len, eliteSize=5, mutationRate=0.01, generations=500)  ###看是否缩进
+    progress,bestRoute = geneticAlgorithm(population=cityList, popSize=data_len, eliteSize=5,
+                                          mutationRate=0.01, generations=500000)  ###看是否缩进
     print("This took", time.clock() - start_time, "seconds to calculate.")
+    #画出最优路径的路线图
+    bestRoute_forplot.append(bestRoute_forplot[0])
+    x_coords = []
+    y_coords = []
+    for individual in bestRoute_forplot:
+        x_coords.append(individual.x)
+        y_coords.append(individual.y)
+    plt.plot(x_coords[0], y_coords[0], 'ro-')
+    plt.plot(x_coords, y_coords, 'rx-')
+    for elem in range(0, len(bestRoute_forplot)):
+        elem_num = elem + 1
+        point_x = bestRoute_forplot[elem].x
+        point_y = bestRoute_forplot[elem].y
+        if elem<len(bestRoute_forplot)-1:
+            plt.annotate("%d" % elem_num, xy=(point_x, point_y))
+        else:
+            plt.annotate(" ", xy=(point_x, point_y))
+    plt.title('GA')
+    plt.show()
+    #画出距离随迭代次数的变化
+
     plt.plot(progress)
+    plt.title('GA')
     plt.ylabel('Distance')
     plt.xlabel('Generation')
     plt.show()
